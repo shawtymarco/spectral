@@ -45,8 +45,7 @@ func Dial(ctx context.Context, address string) (Connection, error) {
 		select {
 		case <-c.ctx.Done():
 			return context.Cause(c.ctx)
-		default:
-			c.packets <- &receivedPacket{sequenceID, frames, time.Now()}
+		case c.packets <- &receivedPacket{sequenceID, frames, time.Now()}:
 			return
 		}
 	})

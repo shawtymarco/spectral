@@ -37,7 +37,6 @@ func (c *ClientConnection) OpenStream(ctx context.Context) (*Stream, error) {
 	c.streamResponses[streamID] = ch
 	c.mu.Unlock()
 	defer func() {
-		close(ch)
 		c.mu.Lock()
 		delete(c.streamResponses, streamID)
 		c.mu.Unlock()
@@ -69,7 +68,10 @@ func (c *ClientConnection) OpenStream(ctx context.Context) (*Stream, error) {
 func (c *ClientConnection) handle(fr frame.Frame) (err error) {
 	switch fr := fr.(type) {
 	case *frame.ConnectionResponse:
-		c.response <- fr
+		select {
+		case c.response <- fr:
+		default:
+		}
 	case *frame.StreamResponse:
 		c.mu.RLock()
 		ch, ok := c.streamResponses[fr.StreamID]

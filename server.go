@@ -50,7 +50,11 @@ func (c *ServerConnection) handle(fr frame.Frame) (err error) {
 			return err
 		}
 	case *frame.StreamRequest:
-		c.streamRequests <- fr
+		select {
+		case c.streamRequests <- fr:
+		case <-c.ctx.Done():
+			return context.Cause(c.ctx)
+		}
 	}
 	return
 }

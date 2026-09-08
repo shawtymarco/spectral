@@ -1,5 +1,17 @@
 # Spectral
 
+## Maintenance fork
+
+This fork retains the upstream module path and MIT license. Its baseline is
+`cooldogedev/spectral` v0.0.5 (`6216af5e67dc623f50953077b52293592e17e944`).
+The maintenance changes synchronize listener shutdown, release the listener-owned
+UDP socket, and make shutdown/backpressure safe for in-flight channel producers.
+The UDP frame format and stream protocol are unchanged. Examples have separate
+client/server packages so the complete repository can be validated.
+
+Validation: `go test ./...`, `go vet ./...`, and `go test -race ./...`.
+Consumers must pin an immutable fork revision using a Go module replacement.
+
 **Spectral** is a blazingly fast, lightweight, and powerful network engine designed for real-time, low-latency applications such as gaming, streaming, and other interactive services. Built on top of UDP, Spectral ensures high performance while maintaining reliability through advanced networking concepts.
 
 ## Core Concepts

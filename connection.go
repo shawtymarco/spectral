@@ -412,8 +412,9 @@ func (c *connection) cleanup() {
 	c.handler = nil
 	c.discovery.mtuIncrease = nil
 	clear(c.receiveQueue.queue)
-	close(c.packets)
-	close(c.notify)
+	// Concurrent UDP/stream producers may already hold these channels after
+	// cancellation. Context terminates the receiver; GC reclaims channels when
+	// those producers leave. Closing them here would race an in-flight send.
 }
 
 func firstTime(idle, ack, retransmission, pacing time.Time) time.Time {

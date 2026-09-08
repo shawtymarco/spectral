@@ -38,32 +38,48 @@ func newListener(conn *udpConn) *Listener {
 		}
 
 		listener.connectionsMu.Lock()
-		defer listener.connectionsMu.Unlock()
+		if listener.ctx.Err() != nil {
+			listener.connectionsMu.Unlock()
+			return context.Cause(listener.ctx)
+		}
 		c, ok := listener.connections[connectionID]
+		created := false
 		if !ok && slices.ContainsFunc(frames, func(fr frame.Frame) bool { return fr.ID() == frame.IDConnectionRequest }) {
 			c = newServerConnection(conn, dgram.peerAddr, listener.connectionID, listener.ctx)
 			c.logger.Log("connection_accepted", "addr", dgram.peerAddr.String())
 			listener.connections[listener.connectionID] = c
 			listener.connectionID++
-			listener.incomingConnections <- c
+			created = true
 			go func() {
 				<-c.ctx.Done()
 				listener.connectionsMu.Lock()
-				delete(listener.connections, protocol.ConnectionID(c.connectionID.Load()))
+				id := protocol.ConnectionID(c.connectionID.Load())
+				if listener.connections[id] == c {
+					delete(listener.connections, id)
+				}
 				listener.connectionsMu.Unlock()
 			}()
 		}
+		listener.connectionsMu.Unlock()
 
 		if c == nil {
 			return
+		}
+		if created {
+			select {
+			case listener.incomingConnections <- c:
+			case <-listener.ctx.Done():
+				return context.Cause(listener.ctx)
+			case <-c.ctx.Done():
+				return nil
+			}
 		}
 
 		select {
 		case <-listener.ctx.Done():
 			return context.Cause(listener.ctx)
 		case <-c.ctx.Done():
-		default:
-			c.packets <- &receivedPacket{sequenceID, frames, time.Now()}
+		case c.packets <- &receivedPacket{sequenceID, frames, time.Now()}:
 		}
 		return
 	})
@@ -95,18 +111,29 @@ func (l *Listener) Accept(ctx context.Context) (Connection, error) {
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
 	case conn := <-l.incomingConnections:
+		if l.ctx.Err() != nil || conn.ctx.Err() != nil {
+			return nil, errors.New("listener or connection closed")
+		}
 		return conn, nil
 	}
 }
 
 func (l *Listener) Close() (err error) {
 	l.once.Do(func() {
-		for i, conn := range l.connections {
-			_ = conn.CloseWithError(frame.ConnectionCloseGraceful, "closed listener")
-			delete(l.connections, i)
-		}
 		l.cancelFunc()
-		_ = l.conn.Close()
+		l.connectionsMu.Lock()
+		connections := make([]*ServerConnection, 0, len(l.connections))
+		for _, conn := range l.connections {
+			connections = append(connections, conn)
+		}
+		clear(l.connections)
+		l.connectionsMu.Unlock()
+		for _, conn := range connections {
+			_ = conn.CloseWithError(frame.ConnectionCloseGraceful, "closed listener")
+		}
+		// Per-connection Close deliberately keeps a shared listener socket
+		// open. Only the listener owns and closes the actual UDP socket.
+		err = l.conn.conn.Close()
 	})
 	return
 }
