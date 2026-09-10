@@ -26,9 +26,14 @@ func newServerConnection(conn *udpConn, peerAddr *net.UDPAddr, connectionID prot
 
 func (c *ServerConnection) AcceptStream(ctx context.Context) (*Stream, error) {
 	select {
+	case <-c.ctx.Done():
+		return nil, context.Cause(c.ctx)
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
 	case request := <-c.streamRequests:
+		if err := context.Cause(c.ctx); err != nil {
+			return nil, err
+		}
 		c.logger.Log("stream_accept", "streamID", request.StreamID)
 		stream, err := c.createStream(request.StreamID)
 		if err != nil {
@@ -36,6 +41,7 @@ func (c *ServerConnection) AcceptStream(ctx context.Context) (*Stream, error) {
 		}
 
 		if err := c.writeControl(&frame.StreamResponse{StreamID: request.StreamID, Response: frame.StreamResponseSuccess}, true); err != nil {
+			_ = stream.Close()
 			return nil, err
 		}
 		c.logger.Log("stream_accept_success", "streamID", request.StreamID)

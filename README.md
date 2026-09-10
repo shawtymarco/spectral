@@ -12,6 +12,18 @@ client/server packages so the complete repository can be validated.
 Validation: `go test ./...`, `go vet ./...`, and `go test -race ./...`.
 Consumers must pin an immutable fork revision using a Go module replacement.
 
+## CRITICAL: cancelled stream opens must release the remote stream
+
+Cancellation can race server acceptance while a shared connection still carries
+other sessions. An abandoned `OpenStream` must send `StreamClose`, and a late
+successful response must close the remote stream again if no local stream exists.
+Otherwise a consumer waiting for its first application packet can wait forever.
+`AcceptStream` also stops when the peer connection closes, even if its caller
+supplied a background context. The cancellation regression delays acceptance
+until after the caller has left, checks that the remote read ends, and verifies
+that another stream on the same connection still works. Consumers must separately
+bound application handshakes and must not perform them in a shared accept loop.
+
 **Spectral** is a blazingly fast, lightweight, and powerful network engine designed for real-time, low-latency applications such as gaming, streaming, and other interactive services. Built on top of UDP, Spectral ensures high performance while maintaining reliability through advanced networking concepts.
 
 ## Core Concepts
