@@ -6,13 +6,10 @@ import (
 	"time"
 )
 
-const retransmissionAttempts = 3
-
 type retransmissionEntry struct {
 	sequenceID uint32
 	payload    []byte
 	sent       time.Time
-	attempts   int
 }
 
 type retransmissionQueue struct {
@@ -63,14 +60,11 @@ func (r *retransmissionQueue) shift(now time.Time, rto time.Duration) (p []byte,
 	if now.Sub(entry.sent) >= rto {
 		sent := entry.sent
 		entry.sent = now
-		entry.attempts++
-		if entry.attempts >= retransmissionAttempts {
-			r.queue[0] = nil
-			r.queue = r.queue[1:]
-		} else {
-			r.queue = append(r.queue[1:], entry)
-			r.sort()
-		}
+		// Stream bytes are reliable and ordered. Abandoning one unacknowledged
+		// datagram leaves a permanent sequence gap and unreleased flight bytes
+		// on the shared peer. Retain it until ACK or connection cleanup.
+		r.queue = append(r.queue[1:], entry)
+		r.sort()
 		return entry.payload, sent
 	}
 	return

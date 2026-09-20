@@ -48,15 +48,19 @@ func newStream(streamID protocol.StreamID, parentCtx context.Context, sendQueue 
 }
 
 func (s *Stream) Read(p []byte) (int, error) {
-	if n := s.read(p); n > 0 {
-		return n, nil
+	if len(p) == 0 {
+		return 0, nil
 	}
-
-	select {
-	case <-s.ctx.Done():
-		return 0, context.Cause(s.ctx)
-	case <-s.available:
-		return s.read(p), nil
+	for {
+		if n := s.read(p); n > 0 {
+			return n, nil
+		}
+		select {
+		case <-s.ctx.Done():
+			return 0, context.Cause(s.ctx)
+		case <-s.available:
+			// A prior read may have consumed this notification's bytes.
+		}
 	}
 }
 
@@ -151,7 +155,11 @@ func (s *Stream) read(p []byte) (n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.buffer.Len() > 0 {
-		return s.buffer.Read(p)
+		n = s.buffer.Read(p)
+		// Receiving a burst can fill the bounded buffer while ordered frames
+		// remain queued. Draining it must resume those frames even if the peer
+		// is now waiting for an application response and sends nothing else.
+		s.processFrames()
 	}
 	return
 }

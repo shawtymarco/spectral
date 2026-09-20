@@ -12,6 +12,17 @@ client/server packages so the complete repository can be validated.
 Validation: `go test ./...`, `go vet ./...`, and `go test -race ./...`.
 Consumers must pin an immutable fork revision using a Go module replacement.
 
+Reliable datagrams remain in the retransmission queue until acknowledged or the
+peer is closed. A fixed retry count must not silently discard ordered stream
+bytes: the resulting sequence gap and unreleased flight accounting can stall
+existing and subsequent streams on the shared peer. Retransmissions retain the
+existing RTO/congestion pacing and connection inactivity cleanup.
+
+Reading a full stream buffer also resumes queued ordered frames immediately;
+progress must not depend on another datagram arriving. Regression tests force
+four consecutive UDP losses, verify recovery and reuse of the shared peer, and
+drain a saturated receiver without further network traffic.
+
 ## CRITICAL: cancelled stream opens must release the remote stream
 
 Cancellation can race server acceptance while a shared connection still carries
